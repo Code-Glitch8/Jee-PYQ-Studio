@@ -1,0 +1,5 @@
+.env
+python-importer/.env
+__pycache__/
+node_modules/
+.supabase/
