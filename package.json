@@ -1,0 +1,11 @@
+{
+  "name": "jee-pyq-studio",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "test": "node --test",
+    "check": "node --check js/app.js && node --check js/exam.js && node --check js/lib.js && node --check js/marking.js",
+    "serve": "python3 -m http.server 8080"
+  }
+}
