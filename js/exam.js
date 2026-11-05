@@ -1,10 +1,13 @@
-import { sb, ctx, esc, $, $$, fmt, math, toast, errBox, startAttempt } from './lib.js';
-import { marksFor } from './marking.js';
+import { sb, ctx, esc, $, $$, fmt, math, toast, errBox, startAttempt, ico, head, empty, loading, subjTag, sk, pct, bar, confirmDialog } from './lib.js';
+import { marksFor, correctValue } from './marking.js';
+
+const TYPE_LABEL = { single_mcq: 'Single correct', multi_mcq: 'One or more correct', numerical: 'Numerical', integer: 'Integer' };
+const asList = v => (Array.isArray(v) ? v : v == null || v === '' ? [] : [v]).map(x => String(x).trim().toUpperCase());
 
 const QSEL = 'id,statement,question_type,difficulty,correct_answer,subject_id,chapter_id,topic_id,marks_scheme_id,question_number,papers(exam_id,exam_year,session,shift,exams(name)),subjects(name),chapters(name),topics(name)';
 
 export async function examView(root, attemptId) {
-  root.innerHTML = '<p class="muted" style="padding:2rem">Loading test…</p>';
+  root.innerHTML = `<div style="padding:3rem 2rem">${loading('Loading test…')}</div>`;
   try {
     const { data: att, error } = await sb.from('attempts').select('*, tests(name,duration_seconds)').eq('id', attemptId).single();
     if (error) throw error;
@@ -25,7 +28,7 @@ export async function examView(root, attemptId) {
       R[q.id] = r ? { ...r, dirty: false } : { question_id: q.id, first_opened_at: null, active_seconds: 0, visit_count: 0, answer_events: [], final_answer: null, marked_for_review: false, dirty: false };
     }
     run({ root, att, questions, opts, R, schemes });
-  } catch (e) { root.innerHTML = '<div style="padding:2rem">' + errBox(e) + '<a href="#/tests">Back to My Tests</a></div>'; }
+  } catch (e) { root.innerHTML = '<div style="padding:2rem;max-width:560px;margin:0 auto">' + errBox(e) + '<a class="btn ghost" href="#/tests">Back to my tests</a></div>'; }
 }
 
 function run(S) {
@@ -78,10 +81,13 @@ function run(S) {
     return (i === cur ? 'cur ' : '') + (r.marked_for_review ? 'review' : r.final_answer != null && r.final_answer !== '' && !(Array.isArray(r.final_answer) && !r.final_answer.length) ? 'answered' : r.visit_count ? 'visited' : '');
   }
   function drawPalette() {
-    $('#pal', root).innerHTML = questions.map((q, i) => `<button class="pal ${status(q, i)}" data-i="${i}" title="${esc(q.subjects?.name)}">${i + 1}</button>`).join('');
+    const cnt = { answered: 0, visited: 0, review: 0, none: 0 };
+    $('#pal', root).innerHTML = questions.map((q, i) => { const st = status(q, i); cnt[st.replace('cur ', '').trim() || 'none']++;
+      return `<button class="pal ${st}" data-i="${i}" title="${esc(q.subjects?.name)}" aria-label="Question ${i + 1}${st.includes('answered') ? ', answered' : st.includes('review') ? ', marked for review' : st.includes('visited') ? ', not answered' : ', not visited'}"${i === cur ? ' aria-current="true"' : ''}>${i + 1}</button>`; }).join('');
     $$('#pal .pal', root).forEach(b => b.onclick = () => go(+b.dataset.i));
+    $('#legend', root).innerHTML = `<span><i class="a"></i>Answered<b>${cnt.answered}</b></span><span><i class="v"></i>Not answered<b>${cnt.visited}</b></span><span><i class="r"></i>For review<b>${cnt.review}</b></span><span><i></i>Not visited<b>${cnt.none}</b></span>`;
     const subs = [...new Map(questions.map((q, i) => [q.subject_id, { n: q.subjects?.name, i }])).values()];
-    $('#subs', root).innerHTML = subs.map(s => `<button data-i="${s.i}" class="${questions[cur].subjects?.name === s.n ? 'on' : ''}">${esc(s.n)}</button>`).join('');
+    $('#subs', root).innerHTML = subs.map(s => `<button data-s="${sk(s.n)}" data-i="${s.i}" class="${questions[cur].subjects?.name === s.n ? 'on' : ''}"><span class="dot"></span>${esc(s.n)}</button>`).join('');
     $$('#subs button', root).forEach(b => b.onclick = () => go(+b.dataset.i));
   }
   function draw() {
@@ -90,10 +96,10 @@ function run(S) {
     let input;
     if (q.question_type === 'single_mcq' || q.question_type === 'multi_mcq') {
       const multi = q.question_type === 'multi_mcq';
-      input = qo.map(o => { const sel = multi ? (a || []).includes(o.label) : a === o.label;
-        return `<label class="opt ${sel ? 'sel' : ''}"><input type="${multi ? 'checkbox' : 'radio'}" name="o" value="${esc(o.label)}" ${sel ? 'checked' : ''}><span><b>${esc(o.label)}.</b> ${esc(o.content)}</span></label>`; }).join('');
-    } else input = `<label for="num">Your answer</label><input id="num" inputmode="decimal" autocomplete="off" value="${esc(a ?? '')}">`;
-    $('#qbox', root).innerHTML = `<div class="muted">Question ${cur + 1} of ${questions.length} · ${esc(q.subjects?.name)} · ${esc(q.chapters?.name || '')} · ${esc(q.question_type.replace('_', ' '))}</div>
+      input = `<div class="opts" role="${multi ? 'group' : 'radiogroup'}" aria-label="Answer options">` + qo.map(o => { const sel = multi ? (a || []).includes(o.label) : a === o.label;
+        return `<label class="opt ${multi ? 'multi' : ''} ${sel ? 'sel' : ''}"><input type="${multi ? 'checkbox' : 'radio'}" name="o" value="${esc(o.label)}" ${sel ? 'checked' : ''}><span class="key">${esc(o.label)}</span><span class="txt">${esc(o.content)}</span></label>`; }).join('') + '</div>';
+    } else input = `<label for="num">Your answer</label><input id="num" class="num-input" inputmode="decimal" autocomplete="off" value="${esc(a ?? '')}">`;
+    $('#qbox', root).innerHTML = `<div class="q-meta"><span class="qn">Q${cur + 1} <span class="muted">of ${questions.length}</span></span>${subjTag(q.subjects?.name)}${q.chapters?.name ? `<span class="tag">${esc(q.chapters.name)}</span>` : ''}<span class="tag">${esc(TYPE_LABEL[q.question_type] || q.question_type)}</span></div>
       <div class="q-statement">${esc(q.statement)}</div>${input}`;
     $$('#qbox input[name=o]', root).forEach(el => el.onchange = () => {
       if (q.question_type === 'multi_mcq') setAnswer($$('#qbox input[name=o]:checked', root).map(x => x.value)); else setAnswer(el.value);
@@ -105,23 +111,22 @@ function run(S) {
   }
 
   root.innerHTML = `<div class="exam">
-    <div class="exam-top card" style="margin:0"><div><b>${esc(att.tests.name)}</b><div class="muted">Attempt ${att.attempt_number} · your own practice clock, not the official exam limit</div></div>
-      <div class="timer" id="timer" aria-live="off"></div>
-      <div class="row"><button class="ghost" id="pause">Pause</button><button id="submit">Submit test</button></div></div>
-    <div><div class="tabs" id="subs"></div><div class="card" id="qbox" style="margin-top:.8rem"></div>
-      <div class="row"><button class="ghost" id="prev">Previous</button><button id="next">Save &amp; next</button><button class="ghost" id="rev">Mark for review</button><button class="ghost" id="clear">Clear response</button></div></div>
-    <aside class="card"><b>Question palette</b><div class="palette" id="pal" style="margin-top:.6rem"></div>
-      <p class="muted" style="font-size:.8rem">Green answered · red visited, no answer · amber marked for review</p></aside>
-    <div id="overlay" hidden class="card" style="grid-column:1/-1"><b>Paused.</b> Time is not counting. <button id="resume">Resume</button></div></div>`;
+    <div class="exam-top card"><div class="title"><b>${esc(att.tests.name)}</b><span>Attempt ${att.attempt_number} · your own practice clock, not the official exam limit</span></div>
+      <div class="timer" id="timer" role="timer" aria-live="off">${ico('clock')}<span id="tt">${fmt(remaining)}</span></div>
+      <div class="actions"><button class="ghost" id="pause">${ico('pause')}Pause</button><button class="accent" id="submit">Submit test</button></div></div>
+    <div class="exam-main"><div class="tabs" id="subs"></div><div class="card paper" id="qbox"></div>
+      <div class="exam-actions"><button class="ghost" id="prev">Previous</button><button class="ghost" id="rev">Mark for review</button><button class="ghost" id="clear">Clear response</button><span class="spacer"></span><button class="accent" id="next">Save &amp; next</button></div></div>
+    <aside class="card exam-side"><h3>Question palette</h3><div class="palette" id="pal"></div><div class="legend" id="legend"></div></aside>
+    <div class="paused" id="overlay" role="dialog" aria-modal="true" aria-label="Test paused"><div class="card"><h3>Test paused</h3><p class="muted">Your timer has stopped and your answers are saved.</p><button class="accent" id="resume">Resume test</button></div></div></div>`;
 
   $('#prev', root).onclick = () => go(cur - 1);
   $('#next', root).onclick = () => go(cur + 1);
   $('#rev', root).onclick = () => { const r = R[questions[cur].id]; r.marked_for_review = !r.marked_for_review; r.dirty = true; draw(); };
   $('#clear', root).onclick = () => { setAnswer(null); draw(); };
-  const setPause = async p => { paused = p; $('#overlay', root).hidden = !p; $('#qbox', root).style.visibility = p ? 'hidden' : 'visible'; await save(); };
+  const setPause = async p => { paused = p; $('#overlay', root).classList.toggle('show', p); $('#qbox', root).style.visibility = p ? 'hidden' : 'visible'; if (p) $('#resume', root).focus(); await save(); };
   $('#pause', root).onclick = () => setPause(true); $('#resume', root).onclick = () => setPause(false);
-  $('#submit', root).onclick = () => { const un = questions.filter(q => R[q.id].final_answer == null).length;
-    if (confirm(`Submit now? ${un} of ${questions.length} questions are unanswered.`)) finish(); };
+  $('#submit', root).onclick = async () => { const un = questions.filter(q => R[q.id].final_answer == null).length;
+    if (await confirmDialog('Submit this test?', un ? `${un} of ${questions.length} questions are unanswered. You cannot change answers after submitting.` : 'All questions are answered. You cannot change answers after submitting.', 'Submit test', 'Keep working')) finish(); };
 
   async function finish() {
     if (done) return; done = true; clearInterval(timerId);
@@ -141,12 +146,14 @@ function run(S) {
     location.hash = '#/results/' + att.id;
   }
 
+  const showTime = () => { $('#tt', root).textContent = fmt(remaining); $('#timer', root).classList.toggle('low', remaining <= 300); };
+  showTime();
   const timerId = setInterval(() => {
     const now = Date.now(), dt = Math.min((now - last) / 1000, 2); last = now;
     if (paused || done) return;
     remaining -= dt; elapsedTotal += dt;
     if (isActive() && visit) { const r = R[visit.q]; r.active_seconds += dt; visit.ms += dt * 1000; activeTotal += dt; r.dirty = true; }
-    $('#timer', root).textContent = fmt(remaining);
+    showTime();
     if (remaining <= 0) { toast('Time is up. Submitting.'); finish(); }
   }, 1000);
   const autosave = setInterval(() => { if (!done) save(); }, 10000);
@@ -157,7 +164,7 @@ function run(S) {
 }
 
 export async function resultsView(main, attemptId) {
-  main.innerHTML = '<p class="muted">Loading results…</p>';
+  main.innerHTML = loading('Loading results…');
   try {
     const { data: att, error } = await sb.from('attempts').select('*, tests(id,name,question_count,duration_seconds)').eq('id', attemptId).single();
     if (error) throw error;
@@ -172,32 +179,43 @@ export async function resultsView(main, attemptId) {
     const unatt = resp.filter(r => r.is_correct === null).length, attempted = correct + wrong;
     const grp = key => { const m = {}; for (const r of resp) { const k = key(r) || 'Unclassified'; const g = (m[k] ||= { n: 0, c: 0, w: 0, t: 0, marks: 0 });
       g.n++; g.t += +r.active_seconds || 0; g.marks += +r.marks_awarded || 0; if (r.is_correct === true) g.c++; if (r.is_correct === false) g.w++; } return m; };
-    const table = (m, title) => `<h2>${title}</h2><div class="card" style="overflow-x:auto"><table><tr><th></th><th>Questions</th><th>Correct</th><th>Wrong</th><th>Accuracy</th><th>Avg time</th></tr>` +
-      Object.entries(m).map(([k, g]) => `<tr><td>${esc(k)}</td><td>${g.n}</td><td>${g.c}</td><td>${g.w}</td><td>${g.c + g.w ? Math.round(100 * g.c / (g.c + g.w)) + '%' : '—'}</td><td>${fmt(g.t / g.n)}</td></tr>`).join('') + '</table></div>';
+    const table = (m, title, col) => `<h2>${title}</h2><div class="card flush table-wrap"><table><thead><tr><th>${col}</th><th class="num">Questions</th><th class="num">Correct</th><th class="num">Wrong</th><th>Accuracy</th><th class="num">Avg time</th></tr></thead><tbody>` +
+      Object.entries(m).map(([k, g]) => `<tr><td>${esc(k)}</td><td class="num">${g.n}</td><td class="num">${g.c}</td><td class="num">${g.w}</td><td>${bar(pct(g.c, g.w))}</td><td class="num">${fmt(g.t / g.n)}</td></tr>`).join('') + '</tbody></table></div>';
     const timed = resp.filter(r => r.visit_count > 0).sort((a, b) => a.active_seconds - b.active_seconds);
-    const label = r => `Q${resp.indexOf(r) + 1} (${fmt(r.active_seconds)})`;
-    main.innerHTML = `<h1>Results: ${esc(att.tests.name)}</h1>
-      <div class="grid">
-        <div class="card stat"><b>${att.score ?? '—'} / ${att.max_score ?? '—'}</b>Marks</div>
-        <div class="card stat"><b class="ok">${correct}</b>Correct</div><div class="card stat"><b class="bad">${wrong}</b>Incorrect</div><div class="card stat"><b>${unatt}</b>Unattempted</div>
-        <div class="card stat"><b>${attempted ? Math.round(100 * correct / attempted) : 0}%</b>Accuracy</div>
-        <div class="card stat"><b>${fmt(att.total_elapsed_seconds)}</b>Total duration</div><div class="card stat"><b>${fmt(att.active_seconds)}</b>Active time</div>
-        <div class="card stat"><b>${fmt((att.active_seconds || 0) / Math.max(n, 1))}</b>Avg per question</div></div>
-      ${timed.length ? `<p class="muted">Fastest: ${label(timed[0])} · Slowest: ${label(timed[timed.length - 1])}</p>` : ''}
-      <div class="row"><a class="btn" href="#/coach/${att.id}">AI Study Coach report</a><button class="ghost" id="re">Reattempt this test</button><button class="ghost" id="wrongTest">Test from incorrect questions</button></div>
-      ${table(grp(r => r.questions?.subjects?.name), 'Subject-wise')}${table(grp(r => r.questions?.chapters?.name), 'Chapter-wise')}${table(grp(r => r.questions?.topics?.name), 'Topic-wise')}
+    const qno = r => resp.indexOf(r) + 1;
+    const accPct = pct(correct, wrong) ?? 0;
+    const when = att.submitted_at ? new Date(att.submitted_at).toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' }) : '';
+    const verdict = r => r.is_correct === true ? 'Correct' : r.is_correct === false ? 'Incorrect' : 'Unattempted';
+    main.innerHTML = head(att.tests.name, `Attempt ${att.attempt_number}${when ? ' · ' + esc(when) : ''}`,
+        `<a class="btn accent" href="#/coach/${att.id}">${ico('coach')}AI study coach report</a><button class="ghost" id="re">Reattempt this test</button><button class="ghost" id="wrongTest">Test from incorrect questions</button>`)
+      + `<div class="card result-hero"><div class="score-big"><div><div class="lbl">Your score</div><div class="n">${att.score ?? '—'}<small>/ ${att.max_score ?? '—'}</small></div></div>
+          <div class="row" style="flex-wrap:nowrap;gap:.9rem"><div class="ring" id="ring" role="img" aria-label="Accuracy ${accPct} percent"><svg width="84" height="84" viewBox="0 0 84 84"><circle class="bg" cx="42" cy="42" r="34"/><circle class="fg" cx="42" cy="42" r="34" style="--d:0"/></svg><b>${accPct}%</b></div>
+          <div><div class="lbl" style="margin:0">Accuracy</div><div class="small muted">${correct} of ${attempted} attempted</div></div></div></div>
+        <div class="strip-wrap"><div class="head"><span>Question by question</span><span class="small">Select a block to jump to its review</span></div>
+          <div class="strip">${resp.map((r, i) => `<button class="${r.is_correct === true ? 'c' : r.is_correct === false ? 'w' : 's'}" style="--i:${i}" data-i="${i}" title="Q${i + 1}: ${verdict(r)}" aria-label="Q${i + 1}, ${verdict(r)}. Jump to review"></button>`).join('')}</div>
+          <div class="strip-legend"><span><i style="background:var(--ok)"></i><b>${correct}</b> correct</span><span><i style="background:var(--bad)"></i><b>${wrong}</b> incorrect</span><span><i style="background:var(--line-strong)"></i><b>${unatt}</b> unattempted</span></div></div></div>
+      <div class="stats"><div class="stat"><b>${fmt(att.total_elapsed_seconds)}</b>Total duration</div><div class="stat"><b>${fmt(att.active_seconds)}</b>Active time</div><div class="stat"><b>${fmt((att.active_seconds || 0) / Math.max(n, 1))}</b>Average per question</div>
+        ${timed.length ? `<div class="stat"><b>${fmt(timed[0].active_seconds)}</b>Fastest, Q${qno(timed[0])}</div><div class="stat"><b>${fmt(timed[timed.length - 1].active_seconds)}</b>Slowest, Q${qno(timed[timed.length - 1])}</div>` : ''}</div>
+      ${table(grp(r => r.questions?.subjects?.name), 'Subject-wise', 'Subject')}${table(grp(r => r.questions?.chapters?.name), 'Chapter-wise', 'Chapter')}${table(grp(r => r.questions?.topics?.name), 'Topic-wise', 'Topic')}
       <h2>Review and solutions</h2><div id="rev"></div>`;
+    requestAnimationFrame(() => requestAnimationFrame(() => $('#ring .fg', main)?.style.setProperty('--d', (213.6 * accPct / 100).toFixed(1))));
     $('#re', main).onclick = async () => { try { location.hash = '#/test/' + await startAttempt(att.tests.id); } catch (e) { toast(e.message); } };
     $('#wrongTest', main).onclick = () => { sessionStorage.setItem('prefill', JSON.stringify({ attempt_filter: 'only_incorrect' })); location.hash = '#/create-test'; };
+    $$('.strip button', main).forEach(b => b.onclick = () => { const d = $$('#rev details', main)[+b.dataset.i]; if (!d) return; d.open = true;
+      d.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' }); d.classList.remove('flash'); void d.offsetWidth; d.classList.add('flash'); });
     $('#rev', main).innerHTML = resp.map((r, i) => {
       const q = r.questions, so = sols.find(s => s.question_id === r.question_id), st = stats.find(s => s.question_id === r.question_id);
       const o = opts.filter(x => x.question_id === r.question_id);
       const fa = v => v == null ? '<i>none</i>' : esc(Array.isArray(v) ? v.join(', ') : typeof v === 'object' ? JSON.stringify(v) : v);
-      return `<details class="card"><summary><b>Q${i + 1}</b> <span class="tag">${r.is_correct === true ? '✓ correct' : r.is_correct === false ? '✗ incorrect' : 'unattempted'}</span><span class="tag">${esc(q.chapters?.name || 'Unclassified')}</span><span class="tag">${esc(q.difficulty || 'unrated')}</span> ${fmt(r.active_seconds)}</summary>
-        <div class="q-statement">${esc(q.statement)}</div>${o.map(x => `<div><b>${esc(x.label)}.</b> ${esc(x.content)}</div>`).join('')}
-        <p>Your answer: ${fa(r.final_answer)} · Correct answer: ${fa(q.correct_answer)} <span class="tag">${q.answer_verified ? 'verified' : 'not yet verified'}</span><span class="tag">source: ${esc(q.answer_source || 'unknown')}</span></p>
-        ${so ? `<p><span class="tag">${so.origin === 'ai_generated' ? 'AI-generated solution' : esc(so.origin)}</span>${so.origin === 'ai_generated' && !so.checked_against_official ? '<span class="tag warn">not checked against an official answer</span>' : ''}</p><div style="white-space:pre-wrap">${esc(so.steps)}</div>` : '<p class="muted">No solution available for this question yet.</p>'}
-        <p class="muted">${st ? `${st.percent_correct ?? '—'}% answered correctly (${st.response_count ?? '?'} responses). Source: ${esc(st.source_note || st.source_url || 'not recorded')}` : 'Historical response statistics unavailable.'}</p></details>`; }).join('');
+      const right = asList(correctValue({ correct_answer: q.correct_answer })), mine = asList(r.final_answer);
+      const optRow = x => { const L = String(x.label).trim().toUpperCase(), isR = right.includes(L), isM = mine.includes(L);
+        return `<div class="opt plain ${isR ? 'is-correct' : isM ? 'is-wrong' : ''}"><span class="key">${esc(x.label)}</span><span class="txt">${esc(x.content)}</span>${isR || isM ? `<span class="tagline">${isR && isM ? 'Your answer, correct' : isR ? 'Correct answer' : 'Your answer'}</span>` : ''}</div>`; };
+      return `<details class="card rv ${r.is_correct === true ? 'c' : r.is_correct === false ? 'w' : ''}" id="rv-${i}"><summary><span class="qn">Q${i + 1}</span><span class="tag ${r.is_correct === true ? 'ok' : r.is_correct === false ? 'bad' : ''}">${verdict(r)}</span>${subjTag(q.subjects?.name)}<span class="tag">${esc(q.chapters?.name || 'Unclassified')}</span><span class="tag">${esc(q.difficulty || 'unrated')}</span><span class="t">${fmt(r.active_seconds)}</span></summary>
+        <div class="body"><div class="q-statement">${esc(q.statement)}</div>${o.length ? `<div class="opts">${o.map(optRow).join('')}</div>` : ''}
+        <div class="answers"><span><b>Your answer</b>${fa(r.final_answer)}</span><span><b>Correct answer</b>${fa(q.correct_answer)}</span></div>
+        <p><span class="tag ${q.answer_verified ? 'ok' : 'warn'}">${q.answer_verified ? 'answer verified' : 'answer not yet verified'}</span><span class="tag">source: ${esc(q.answer_source || 'unknown')}</span></p>
+        ${so ? `<div class="solution"><span class="tag ${so.origin === 'ai_generated' ? 'warn' : 'ok'}">${so.origin === 'ai_generated' ? 'AI-generated solution' : esc(so.origin)}</span>${so.origin === 'ai_generated' && !so.checked_against_official ? '<span class="tag warn">not checked against an official answer</span>' : ''}<div style="white-space:pre-wrap">${esc(so.steps)}</div></div>` : '<p class="muted">No solution available for this question yet.</p>'}
+        <p class="muted small" style="margin:.9rem 0 0">${st ? `${st.percent_correct ?? '—'}% answered correctly (${st.response_count ?? '?'} responses). Source: ${esc(st.source_note || st.source_url || 'not recorded')}` : 'Historical response statistics unavailable.'}</p></div></details>`; }).join('');
     math($('#rev', main));
   } catch (e) { main.innerHTML = errBox(e); }
 }
