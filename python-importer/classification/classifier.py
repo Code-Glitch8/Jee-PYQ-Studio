@@ -38,9 +38,16 @@ def parse_reply(raw: str) -> dict | None:
         d = json.loads(raw)
     except json.JSONDecodeError:
         return None
+    if not isinstance(d, dict):
+        return None
     if d.get("difficulty") not in ("easy", "medium", "hard"):
         d["difficulty"] = None
-    d["confidence"] = max(0.0, min(1.0, float(d.get("confidence") or 0)))
+    if not isinstance(d, dict):
+        return None
+    try:
+        d["confidence"] = max(0.0, min(1.0, float(d.get("confidence") or 0)))
+    except (TypeError, ValueError):
+        d["confidence"] = 0.0
     return d
 
 def classify(provider: str, statement: str, taxonomy: dict) -> dict | None:

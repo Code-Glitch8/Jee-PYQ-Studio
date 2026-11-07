@@ -1,10 +1,10 @@
-import { sb, ctx, esc, $, $$, fmt, math, toast, errBox, startAttempt, ico, head, empty, loading, subjTag, sk, pct, bar, confirmDialog } from './lib.js';
+import { sb, ctx, esc, $, $$, fmt, math, toast, errBox, startAttempt, ico, head, empty, loading, subjTag, sk, pct, bar, confirmDialog, figsAttr, fillFigures } from './lib.js';
 import { marksFor, correctValue } from './marking.js';
 
 const TYPE_LABEL = { single_mcq: 'Single correct', multi_mcq: 'One or more correct', numerical: 'Numerical', integer: 'Integer' };
 const asList = v => (Array.isArray(v) ? v : v == null || v === '' ? [] : [v]).map(x => String(x).trim().toUpperCase());
 
-const QSEL = 'id,statement,question_type,difficulty,correct_answer,subject_id,chapter_id,topic_id,marks_scheme_id,question_number,papers(exam_id,exam_year,session,shift,exams(name)),subjects(name),chapters(name),topics(name)';
+const QSEL = 'id,statement,images,question_type,difficulty,correct_answer,subject_id,chapter_id,topic_id,marks_scheme_id,question_number,papers(exam_id,exam_year,session,shift,exams(name)),subjects(name),chapters(name),topics(name)';
 
 export async function examView(root, attemptId) {
   root.innerHTML = `<div style="padding:3rem 2rem">${loading('Loading test…')}</div>`;
@@ -100,14 +100,14 @@ function run(S) {
         return `<label class="opt ${multi ? 'multi' : ''} ${sel ? 'sel' : ''}"><input type="${multi ? 'checkbox' : 'radio'}" name="o" value="${esc(o.label)}" ${sel ? 'checked' : ''}><span class="key">${esc(o.label)}</span><span class="txt">${esc(o.content)}</span></label>`; }).join('') + '</div>';
     } else input = `<label for="num">Your answer</label><input id="num" class="num-input" inputmode="decimal" autocomplete="off" value="${esc(a ?? '')}">`;
     $('#qbox', root).innerHTML = `<div class="q-meta"><span class="qn">Q${cur + 1} <span class="muted">of ${questions.length}</span></span>${subjTag(q.subjects?.name)}${q.chapters?.name ? `<span class="tag">${esc(q.chapters.name)}</span>` : ''}<span class="tag">${esc(TYPE_LABEL[q.question_type] || q.question_type)}</span></div>
-      <div class="q-statement">${esc(q.statement)}</div>${input}`;
+      <div class="q-statement">${esc(q.statement)}</div><div class="q-figs" ${figsAttr(q.images)}></div>${input}`;
     $$('#qbox input[name=o]', root).forEach(el => el.onchange = () => {
       if (q.question_type === 'multi_mcq') setAnswer($$('#qbox input[name=o]:checked', root).map(x => x.value)); else setAnswer(el.value);
       $$('#qbox .opt', root).forEach(o => o.classList.toggle('sel', o.querySelector('input').checked));
     });
     const num = $('#num', root); if (num) num.oninput = () => setAnswer(num.value.trim() === '' ? null : num.value.trim());
     $('#rev', root).textContent = r.marked_for_review ? 'Unmark review' : 'Mark for review';
-    drawPalette(); math($('#qbox', root));
+    drawPalette(); math($('#qbox', root)); fillFigures($('#qbox', root));
   }
 
   root.innerHTML = `<div class="exam">

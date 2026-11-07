@@ -100,3 +100,34 @@ export async function startAttempt(testId) {
   if (error) throw error;
   return data.id;
 }
+
+/** Form dialog. `fields` is trusted HTML. Resolves with an object of the submitted values, or null if cancelled. */
+export function formDialog(title, fields, okLabel = 'Save', intro = '') {
+  return new Promise(resolve => {
+    const d = document.createElement('dialog'); d.className = 'modal wide'; let result = null;
+    d.innerHTML = `<h3>${esc(title)}</h3>${intro ? `<p>${esc(intro)}</p>` : ''}<form method="dialog" class="stack">${fields}<div class="row"><button type="button" class="ghost" data-r="0">Cancel</button><button class="accent" value="ok">${esc(okLabel)}</button></div></form>`;
+    d.querySelector('[data-r="0"]').onclick = () => d.close();
+    d.querySelector('form').addEventListener('submit', () => { result = Object.fromEntries(new FormData(d.querySelector('form'))); });
+    d.addEventListener('close', () => { d.remove(); resolve(result); });
+    document.body.append(d); d.showModal();
+  });
+}
+
+/** Signed URL for a private storage object (admins read source PDFs, every signed-in user reads question images). */
+export async function signedUrl(bucket, path, seconds = 3600) {
+  const { data } = await sb.storage.from(bucket).createSignedUrl(path, seconds);
+  return data?.signedUrl || null;
+}
+
+/** Fills <div data-figs="[...]"> placeholders with the question's figures. Page snapshots are for admins and are never shown here. */
+export async function fillFigures(root) {
+  for (const el of $$('[data-figs]', root)) {
+    let imgs = []; try { imgs = JSON.parse(el.dataset.figs); } catch { /* ignore malformed */ }
+    el.removeAttribute('data-figs');
+    for (const f of imgs.filter(i => i.kind === 'figure' && i.path)) {
+      const url = await signedUrl(f.bucket || 'question-images', f.path);
+      if (url) el.insertAdjacentHTML('beforeend', `<img src="${esc(url)}" alt="Figure for this question" loading="lazy">`);
+    }
+  }
+}
+export const figsAttr = images => `data-figs="${esc(JSON.stringify(images || []))}"`;

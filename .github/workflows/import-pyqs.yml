@@ -1,8 +1,27 @@
 name: Import PYQs
 on:
   schedule:
-    - cron: "0 3 * * 1"   # weekly, Monday 03:00 UTC
+    - cron: "0 3 * * 1"      # weekly full import, Monday 03:00 UTC
+    - cron: "17 */6 * * *"   # every 6 hours: only runs if an admin queued a run in the Admin page
   workflow_dispatch:
+    inputs:
+      mode:
+        description: "What to do"
+        type: choice
+        default: full
+        options: [full, discover_only, process_only, retry_failed]
+      max_depth:
+        description: "How many links deep to follow archive pages"
+        default: "3"
+      max_pages:
+        description: "Maximum pages to read per site"
+        default: "60"
+      max_downloads:
+        description: "Maximum PDFs to download this run"
+        default: "80"
+      document_id:
+        description: "Optional: process only this source document (UUID from Admin)"
+        required: false
 permissions:
   contents: read
 concurrency:
@@ -25,9 +44,16 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y tesseract-ocr
       - run: pip install -r requirements.txt
       - name: Run importer
+        # The importer exits 3 when no official site could be read, so that a run which imported nothing is never shown as green.
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          IMPORT_ONLY_IF_QUEUED: ${{ github.event.schedule == '17 */6 * * *' && '1' || '' }}
+          IMPORT_MODE: ${{ inputs.mode }}
+          IMPORT_MAX_DEPTH: ${{ inputs.max_depth }}
+          IMPORT_MAX_PAGES: ${{ inputs.max_pages }}
+          IMPORT_MAX_DOWNLOADS: ${{ inputs.max_downloads }}
+          IMPORT_DOCUMENT_ID: ${{ inputs.document_id }}
           AI_PROVIDER: ${{ vars.AI_PROVIDER }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}

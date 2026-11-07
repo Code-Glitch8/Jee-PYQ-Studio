@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "test": "node --test",
-    "check": "node --check js/app.js && node --check js/exam.js && node --check js/lib.js && node --check js/marking.js",
+    "check": "node --check js/app.js && node --check js/exam.js && node --check js/lib.js && node --check js/marking.js && node --check js/admin.js",
     "serve": "python3 -m http.server 8080"
   }
 }

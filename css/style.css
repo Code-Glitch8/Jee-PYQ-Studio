@@ -464,3 +464,30 @@ dialog.modal .row { justify-content: flex-end; margin-top: 1.2rem; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition: none !important; animation: none !important; }
 }
+
+/* figures and admin additions */
+.q-figs img { display: block; max-width: min(100%, 520px); margin: .6rem 0 1rem; border: 1px solid var(--line); border-radius: var(--r); background: #fff; }
+dialog.modal.wide { width: min(94vw, 640px); max-height: 90vh; overflow: auto; }
+dialog.modal .stack { display: grid; gap: .8rem; }
+dialog.modal textarea { min-height: 7rem; }
+.adm-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(135px, 1fr)); gap: .6rem; margin-bottom: 1rem; }
+.adm-chip { display: block; text-align: left; padding: .7rem .9rem; border-radius: var(--r); background: var(--surface); border: 1px solid var(--line); box-shadow: var(--shadow-sm); cursor: pointer; color: var(--ink); }
+.adm-chip b { display: block; font-size: 1.5rem; line-height: 1.2; }
+.adm-chip span { font-size: .78rem; color: var(--muted); text-transform: capitalize; }
+.adm-chip.on { border-color: var(--accent); }
+.adm-chip.bad b { color: var(--bad); } .adm-chip.warn b { color: var(--warn); } .adm-chip.ok b { color: var(--ok); }
+.adm-reason { font-size: .85rem; min-width: 220px; max-width: 46ch; overflow-wrap: break-word; word-break: normal; }
+td .tag { white-space: nowrap; }
+.adm-filters { display: flex; flex-wrap: wrap; gap: .6rem; align-items: end; margin-bottom: .9rem; }
+.adm-filters > div { min-width: 140px; }
+.adm-q { border-top: 1px solid var(--line); padding: 1rem 0; }
+.adm-q:first-child { border-top: 0; }
+.adm-q .q-statement { font-size: 1.02rem; max-width: none; margin: .4rem 0 .6rem; }
+.adm-key { background: var(--accent-soft); border-radius: var(--r); padding: .55rem .8rem; margin: .5rem 0; font-size: .9rem; }
+.adm-key.none { background: var(--hover); color: var(--muted); }
+.adm-thumbs { display: flex; gap: .6rem; flex-wrap: wrap; margin: .4rem 0; }
+.adm-thumbs figure { margin: 0; font-size: .75rem; color: var(--muted); }
+.adm-thumbs img { max-width: 240px; max-height: 160px; border: 1px solid var(--line); border-radius: 6px; background: #fff; display: block; }
+.adm-log-d { font-size: .78rem; color: var(--muted); }
+.adm-log-d pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: .3rem 0 0; }
+.adm-tools { position: sticky; top: 0; background: var(--surface); z-index: 3; padding: .6rem 0; border-bottom: 1px solid var(--line); }

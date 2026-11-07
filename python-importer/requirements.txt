@@ -1,4 +1,4 @@
-PyMuPDF==1.24.11
+PyMuPDF>=1.24.11,<3
 requests==2.32.3
 beautifulsoup4==4.12.3
 supabase==2.9.1

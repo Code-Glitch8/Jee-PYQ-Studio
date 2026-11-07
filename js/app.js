@@ -1,5 +1,6 @@
-import { sb, ctx, esc, $, $$, fmt, math, toast, errBox, applyTheme, startAttempt, ico, head, empty, loading, subjTag, pct, bar } from './lib.js';
+import { sb, ctx, esc, $, $$, fmt, math, toast, errBox, applyTheme, startAttempt, ico, head, empty, loading, subjTag, pct, bar, figsAttr, fillFigures } from './lib.js';
 import { examView, resultsView } from './exam.js';
+import { adminView } from './admin.js';
 
 const NAV = [
   [null, [['dashboard', 'Dashboard']]],
@@ -117,12 +118,12 @@ const VIEWS = {
         <div class="q-snippet">${esc(x.statement)}</div></summary><div class="more muted">Loading…</div></details>`).join('')
         : empty('No questions match these filters', 'The bank only contains questions that were imported and published. Try removing a filter.');
       $$('#list details').forEach(d => d.addEventListener('toggle', async () => { if (!d.open || d.dataset.loaded) return; d.dataset.loaded = 1; const id = d.dataset.id;
-        const [{ data: q1 }, { data: o }, { data: s }, { data: st }] = await Promise.all([sb.from('questions').select('statement,answer_verified,answer_source,source_status').eq('id', id).single(), sb.from('question_options').select('*').eq('question_id', id).order('sort_order'),
+        const [{ data: q1 }, { data: o }, { data: s }, { data: st }] = await Promise.all([sb.from('questions').select('statement,images,answer_verified,answer_source,source_status').eq('id', id).single(), sb.from('question_options').select('*').eq('question_id', id).order('sort_order'),
           sb.from('solutions').select('origin,steps').eq('question_id', id).eq('is_published', true).limit(1), sb.from('question_stats').select('*').eq('question_id', id).limit(1)]);
-        d.querySelector('.more').classList.remove('muted'); d.querySelector('.more').innerHTML = `<div class="q-statement">${esc(q1.statement)}</div><div class="opts">${o.map(x => `<div class="opt plain"><span class="key">${esc(x.label)}</span><span class="txt">${esc(x.content)}</span></div>`).join('')}</div>
+        d.querySelector('.more').classList.remove('muted'); d.querySelector('.more').innerHTML = `<div class="q-statement">${esc(q1.statement)}</div><div class="q-figs" ${figsAttr(q1.images)}></div><div class="opts">${o.map(x => `<div class="opt plain"><span class="key">${esc(x.label)}</span><span class="txt">${esc(x.content)}</span></div>`).join('')}</div>
           <p><span class="tag">source: ${esc(String(q1.source_status).replace(/_/g, ' '))}</span><span class="tag ${q1.answer_verified ? 'ok' : 'warn'}">${q1.answer_verified ? 'answer verified' : 'answer not verified'}</span></p>
           ${s?.[0] ? `<div class="solution"><span class="tag ${s[0].origin === 'ai_generated' ? 'warn' : 'ok'}">${s[0].origin === 'ai_generated' ? 'AI-generated solution' : esc(s[0].origin)}</span><div style="white-space:pre-wrap">${esc(s[0].steps)}</div></div>` : '<p class="muted">No solution yet.</p>'}
-          <p class="muted small" style="margin:.9rem 0 0">${st?.[0] ? `${st[0].percent_correct}% answered correctly (${st[0].response_count} responses). Source: ${esc(st[0].source_note || st[0].source_url)}` : 'Historical response statistics unavailable.'}</p>`; math(d); }));
+          <p class="muted small" style="margin:.9rem 0 0">${st?.[0] ? `${st[0].percent_correct}% answered correctly (${st[0].response_count} responses). Source: ${esc(st[0].source_note || st[0].source_url)}` : 'Historical response statistics unavailable.'}</p>`; math(d); fillFigures(d); }));
       math($('#list'));
     }
     $('#fs').onchange = () => { fill(); page = 0; load(); }; ['fc', 'fd', 'fe'].forEach(i => $('#' + i).onchange = () => { page = 0; load(); });
@@ -227,36 +228,7 @@ const VIEWS = {
     $('#cp').onclick = async () => { const { error } = await sb.auth.updateUser({ password: $('#np').value }); toast(error ? error.message : 'Password updated'); };
   },
 
-  async admin(main) {
-    if (ctx.profile?.role !== 'admin') return main.innerHTML = head('Admin') + '<div class="msg err">Administrators only.</div>';
-    const g = async k => (await sb.from('app_settings').select('value').eq('key', k).single()).data?.value;
-    const [mode, paused, inv, review, runs, jobs, logs, dups] = await Promise.all([g('registration_mode'), g('import_paused'), sb.from('invited_emails').select('email'),
-      sb.from('questions').select('id,statement,classification_confidence,answer_verified').or('needs_review.eq.true,answer_verified.eq.false').limit(20),
-      sb.from('import_runs').select('*').order('created_at', { ascending: false }).limit(10), sb.from('import_jobs').select('id,status,last_error,source_documents:document_id(source_url)').eq('status', 'failed').limit(20),
-      sb.from('import_logs').select('level,message,created_at').order('created_at', { ascending: false }).limit(25), sb.from('duplicate_candidates').select('id,similarity,status').eq('status', 'pending').limit(20)]);
-    main.innerHTML = head('Admin', 'Access, imports and review queues.') + `<div class="card"><div class="card-head"><h3>Access</h3></div><div class="row"><select id="rg" style="width:auto;min-width:260px"><option value="private" ${mode === 'private' ? 'selected' : ''}>Private (invited emails only)</option><option value="public" ${mode === 'public' ? 'selected' : ''}>Public registration</option></select><button id="rgs">Save</button></div>
-      <label for="ie">Invite an email address</label><div class="row"><input id="ie" type="email" style="max-width:320px" placeholder="student@example.com"><button class="ghost" id="ia">Invite</button></div><p class="muted small" style="margin:.8rem 0 0">Invited: ${(inv.data || []).map(x => esc(x.email)).join(', ') || 'none'}</p></div>
-      <div class="card"><div class="card-head"><h3>Import engine</h3></div><p class="muted">Imports run in GitHub Actions on a schedule. Buttons here queue or pause work; they do not run Python in your browser.</p>
-      <div class="row"><button id="chk">Check sources</button><button id="go">Start import</button><button class="ghost" id="pz">${paused ? 'Resume imports' : 'Pause imports'}</button><button class="ghost" id="rt">Retry failed documents (${jobs.data?.length || 0})</button></div>
-      <div class="sec"><h3>History</h3>${(runs.data || []).map(r => `<div>${new Date(r.created_at).toLocaleString()} · ${esc(r.trigger)} · <span class="tag">${esc(r.status)}</span></div>`).join('') || '<p class="muted">No runs yet.</p>'}</div>
-      <div class="sec"><h3>Failed documents</h3>${(jobs.data || []).map(j => `<div>${esc(j.source_documents?.source_url || j.id)}: <span class="bad">${esc(j.last_error || '')}</span></div>`).join('') || '<p class="muted">None.</p>'}</div>
-      <div class="sec"><h3>Error log</h3>${(logs.data || []).map(l => `<div class="${l.level === 'error' ? 'bad' : ''}">${esc(l.level)} · ${esc(l.message)}</div>`).join('') || '<p class="muted">Empty.</p>'}</div>
-      <div class="sec"><h3>Possible duplicates</h3><p class="muted">${dups.data?.length || 0} pending review.</p></div></div>
-      <div class="card"><div class="card-head"><h3>Questions needing review (${review.data?.length || 0})</h3></div>${(review.data || []).map(q => `<div class="row between" style="padding:.5rem 0;border-top:1px solid var(--line)"><span style="flex:1;min-width:200px">${esc(q.statement.slice(0, 110))}…</span><button class="ghost sm" data-v="${q.id}">Verify and publish</button></div>`).join('')}
-      <p class="muted small" style="margin:.8rem 0 0">Check the answer against the official key before verifying; verifying also publishes the question. Chapter and difficulty corrections can be made in the Supabase table editor for now.</p></div>`;
-    const set = async (k, v) => { const { error } = await sb.from('app_settings').upsert({ key: k, value: v, updated_by: ctx.user.id }); toast(error ? error.message : 'Saved'); };
-    $('#rgs').onclick = () => set('registration_mode', $('#rg').value); $('#pz').onclick = async () => { await set('import_paused', !paused); route(); };
-    $('#ia').onclick = async () => { const { error } = await sb.from('invited_emails').insert({ email: $('#ie').value.trim().toLowerCase(), invited_by: ctx.user.id }); toast(error ? error.message : 'Invited'); if (!error) route(); };
-    const queue = async () => { const { error } = await sb.from('import_runs').insert({ trigger: 'manual', status: 'queued', requested_by: ctx.user.id }); toast(error ? error.message : 'Queued. The next scheduled workflow run will pick it up, or start the Import workflow from GitHub.'); if (!error) route(); };
-    $('#chk').onclick = queue; $('#go').onclick = queue;
-    $('#rt').onclick = async () => { const { error } = await sb.from('import_jobs').update({ status: 'pending', last_error: null }).eq('status', 'failed'); toast(error ? error.message : 'Failed documents re-queued'); route(); };
-    $$('button[data-v]', main).forEach(b => b.onclick = async () => {
-      const a = prompt('Enter the correct answer from the OFFICIAL answer key (for example B, or A,C, or 12.5). Cancel to leave it unverified.'); if (!a || !a.trim()) return;
-      const t = a.trim(), correct = t !== '' && !isNaN(Number(t)) ? Number(t) : t.toUpperCase().split(/[\s,]+/).filter(Boolean);
-      const { error } = await sb.from('questions').update({ correct_answer: correct, answer_source: 'official', answer_verified: true, answer_verified_by: ctx.user.id, answer_verified_at: new Date().toISOString(), needs_review: false, is_published: true }).eq('id', b.dataset.v);
-      if (!error) { const { data: qq } = await sb.from('questions').select('paper_id').eq('id', b.dataset.v).single(); if (qq) await sb.from('papers').update({ is_published: true }).eq('id', qq.paper_id); }
-      toast(error ? error.message : 'Verified and published'); route(); });
-  },
+  async admin(main) { return adminView(main, route); },
 };
 
 async function submittedData() {
